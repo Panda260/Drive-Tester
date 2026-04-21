@@ -77,67 +77,122 @@ import signal
 
 active_tests = {}
 
-def bg_fio_runner(disk_name, cmd):
-    # Create a process group so we can kill fio and its children
-    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, preexec_fn=os.setsid)
+import re
+import time
+
+# Regex for badblocks: "37584 37585 0.84% done, 7:31:08 elapsed. (0/0/527405 errors)"
+PROGRESS_RE = re.compile(r"(\d+(?:\.\d+)?)% done, ([\d:]+) elapsed\. \((\d+)/(\d+)/(\d+) errors\)")
+
+def bg_test_runner(disk_name, tasks):
+    """Universal background runner for single or multi-stage tests (FIO, Badblocks, Suite)."""
     active_tests[disk_name] = {
-        "process": proc,
+        "status": "running",
         "output": [],
-        "status": "running"
+        "progress": 0,
+        "speed": "0 MB/s",
+        "eta": "Calculating...",
+        "errors": {"read": 0, "write": 0, "compare": 0},
+        "phase": "Initializing...",
+        "process": None
     }
     
-    # Read output line by line
-    for line in iter(proc.stdout.readline, ''):
-        active_tests[disk_name]["output"].append(line)
-        if len(active_tests[disk_name]["output"]) > 50:
-            active_tests[disk_name]["output"].pop(0)
+    for i, (phase_name, cmd) in enumerate(tasks):
+        if active_tests[disk_name]["status"] != "running":
+            break
+            
+        active_tests[disk_name]["phase"] = phase_name
+        active_tests[disk_name]["output"].append(f"\n>>> PHASE {i+1}/{len(tasks)}: {phase_name} <<<\n")
+        
+        start_time = time.time()
+        # Track blocks/progress for speed calculation if it's badblocks
+        is_badblocks = "badblocks" in cmd
+        
+        proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, preexec_fn=os.setsid)
+        active_tests[disk_name]["process"] = proc
+        
+        for line in iter(proc.stdout.readline, ''):
+            # Parse progress if applicable
+            match = PROGRESS_RE.search(line)
+            if match:
+                prog = float(match.group(1))
+                active_tests[disk_name]["progress"] = prog
+                active_tests[disk_name]["errors"] = {
+                    "read": int(match.group(3)),
+                    "write": int(match.group(4)),
+                    "compare": int(match.group(5))
+                }
+                # Calculate simple ETA/Speed placeholder (can be expanded)
+                elapsed = time.time() - start_time
+                if prog > 0:
+                    total_est = (elapsed / prog) * 100
+                    rem = total_est - elapsed
+                    m, s = divmod(int(rem), 60)
+                    h, m = divmod(m, 60)
+                    active_tests[disk_name]["eta"] = f"{h:02d}:{m:02d}:{s:02d}"
+                
+                # For long scans, don't spam the log with every progress update
+                if is_badblocks:
+                    continue 
 
-    proc.stdout.close()
-    proc.wait()
-    # Don't overwrite if it was manually aborted
+            active_tests[disk_name]["output"].append(line)
+            if len(active_tests[disk_name]["output"]) > 100:
+                active_tests[disk_name]["output"].pop(0)
+
+        proc.stdout.close()
+        proc.wait()
+        
     if active_tests[disk_name]["status"] == "running":
         active_tests[disk_name]["status"] = "finished" if proc.returncode == 0 else "error"
 
 def start_fio_test(disk_name, test_type="read", test_mode="random", bs="4k", direct=1):
-    """Start fio test in background with advanced parameters."""
+    """Start diagnostic test (FIO, Suite, or Badblocks) in background."""
     if disk_name in active_tests and active_tests[disk_name]["status"] == "running":
         return {"error": "A test is already running on this disk"}
 
     dev_path = f"/dev/{disk_name}"
-    
-    # Determine rw mode based on type and random/seq mode
-    if test_mode == "random":
-        if test_type == "read": rw = "randread"
-        elif test_type == "write": rw = "randwrite"
-        else: rw = "randrw"
-    else: # sequential
-        if test_type == "read": rw = "read"
-        elif test_type == "write": rw = "write"
-        else: rw = "readwrite"
+    tasks = []
 
-    # Default iodepth 64 for random, 1 for sequential (typical for HDD)
-    iodepth = 64 if test_mode == "random" else 8
+    if test_type == "badblocks":
+        # -w: destructive write-mode, -v: verbose, -s: progress
+        cmd = f"badblocks -wvs {dev_path}"
+        tasks.append(("Badblocks Surface Scan", cmd))
+    elif test_type == "suite":
+        # Sequential Suite: Read -> Write -> ReadWrite
+        tasks.append(("Seq Read", f"fio --name=suite1 --filename={dev_path} --rw=read --bs=1M --direct=1 --ioengine=libaio --iodepth=8 --numjobs=1 --size=1G --runtime=20 --time_based --group_reporting"))
+        tasks.append(("Seq Write", f"fio --name=suite2 --filename={dev_path} --rw=write --bs=1M --direct=1 --ioengine=libaio --iodepth=8 --numjobs=1 --size=1G --runtime=20 --time_based --group_reporting"))
+        tasks.append(("Seq Mixed", f"fio --name=suite3 --filename={dev_path} --rw=readwrite --bs=1M --direct=1 --ioengine=libaio --iodepth=8 --numjobs=1 --size=1G --runtime=20 --time_based --group_reporting"))
+    else:
+        # Standard FIO
+        if test_mode == "random":
+            rw = {"read": "randread", "write": "randwrite", "rw": "randrw"}.get(test_type, "randread")
+        else:
+            rw = {"read": "read", "write": "write", "rw": "readwrite"}.get(test_type, "read")
+        
+        iodepth = 64 if test_mode == "random" else 8
+        cmd = (f"fio --name=tester --filename={dev_path} --rw={rw} --bs={bs} --direct={direct} "
+               f"--ioengine=libaio --iodepth={iodepth} --numjobs=1 --size=1G --runtime=20 "
+               f"--time_based --group_reporting --eta=always")
+        tasks.append(("Standard Benchmark", cmd))
 
-    cmd = (
-        f"fio --name=tester --filename={dev_path} --rw={rw} --bs={bs} "
-        f"--direct={direct} --ioengine=libaio --iodepth={iodepth} --numjobs=1 "
-        f"--size=1G --runtime=20 --time_based --group_reporting --eta=always"
-    )
-    
-    t = threading.Thread(target=bg_fio_runner, args=(disk_name, cmd))
+    t = threading.Thread(target=bg_test_runner, args=(disk_name, tasks))
     t.daemon = True
     t.start()
     return {"status": "started"}
 
 def get_fio_status(disk_name):
-    """Retrieve live status and lines."""
+    """Retrieve live status and metadata."""
     if disk_name not in active_tests:
         return {"status": "none"}
     
     test = active_tests[disk_name]
     return {
         "status": test["status"],
-        "lines": test["output"]
+        "lines": test["output"],
+        "progress": test.get("progress", 0),
+        "speed": test.get("speed", "0 MB/s"),
+        "eta": test.get("eta", "Calculating..."),
+        "errors": test.get("errors", {}),
+        "phase": test.get("phase", "")
     }
 
 def stop_fio_test(disk_name):

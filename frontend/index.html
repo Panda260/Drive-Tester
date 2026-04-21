@@ -86,6 +86,8 @@
                                 <option value="read">Read Only</option>
                                 <option value="write">Write Only (Destructive!)</option>
                                 <option value="rw">Mixed Read/Write (Destructive!)</option>
+                                <option value="suite">Full Sequential Suite (R -> W -> RW)</option>
+                                <option value="badblocks">Badblocks Surface Scan (Destructive!)</option>
                             </select>
                         </div>
                         <div class="control-group">
@@ -111,6 +113,32 @@
                             <button class="btn btn-danger hidden" onclick="abortFioTest()" id="btn-abort-fio">Abort Test</button>
                         </div>
                     </div>
+
+                    <!-- Enhanced Progress Panel -->
+                    <div id="diagnostic-progress-panel" class="diagnostic-panel hidden">
+                        <div class="panel-header">
+                            <h4 id="diag-phase">Phase: Sequential Read</h4>
+                            <span id="diag-eta">ETA: Calculating...</span>
+                        </div>
+                        <div class="progress-container">
+                            <div id="diag-progress-bar" class="progress-bar" style="width: 0%"></div>
+                        </div>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <label>Progress</label>
+                                <span id="diag-percent">0%</span>
+                            </div>
+                            <div class="stat-item">
+                                <label>Speed</label>
+                                <span id="diag-speed">0 MB/s</span>
+                            </div>
+                            <div class="stat-item">
+                                <label>Errors (R/W/C)</label>
+                                <span id="diag-errors" class="error-text">0 / 0 / 0</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <div id="expected-output" class="details-content" style="margin-bottom: 1rem; font-size: 0.85rem;"></div>
                     <div id="fio-output" class="console-output">
                         Run a test to see output here.

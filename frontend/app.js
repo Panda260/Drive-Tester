@@ -259,15 +259,19 @@ async function runFioTest() {
     const out = document.getElementById('fio-output');
     const runBtn = document.getElementById('btn-run-fio');
     const abortBtn = document.getElementById('btn-abort-fio');
+    const progPanel = document.getElementById('diagnostic-progress-panel');
     
-    if (testType === 'write' || testType === 'rw') {
-        const confirmWrite = confirm("WARNING: Running a write test is destructive and will overwrite data on the drive. Are you absolutely sure?");
-        if (!confirmWrite) return;
+    if (['write', 'rw', 'suite', 'badblocks'].includes(testType)) {
+        const warning = testType === 'badblocks' 
+            ? "CRITICAL WARNING: Badblocks will perform a DESTRUCTIVE surface scan. All data on the drive will be PERMANENTLY DELETED. This process can take several DAYS. Proceed?"
+            : "WARNING: This operation involves destructive writes. All data on the selected drive will be lost. Proceed?";
+        if (!confirm(warning)) return;
     }
     
-    out.textContent = `Starting ${testMode.toUpperCase()} ${testType.toUpperCase()} test (${bsSize})...`;
+    out.textContent = `Starting ${testType.toUpperCase()}...`;
     runBtn.classList.add('hidden');
     abortBtn.classList.remove('hidden');
+    progPanel.classList.remove('hidden'); 
     
     try {
         const response = await fetch(`/api/fio/${selectedDisk.name}/start`, {
@@ -326,13 +330,27 @@ async function pollFioStatus() {
         const res = await fetch(`/api/fio/${selectedDisk.name}/status`);
         const data = await res.json();
         const out = document.getElementById('fio-output');
+        const diagPanel = document.getElementById('diagnostic-progress-panel');
         
         if (data.lines && data.lines.length > 0) {
             out.textContent = data.lines.join('');
             out.scrollTop = out.scrollHeight; // Auto-scroll
         }
         
-        if (data.status === 'finished' || data.status === 'error' || data.status === 'aborted') {
+        if (data.status === 'running') {
+            // Update Pro Diagnostic Dashboard
+            if (data.phase) {
+                diagPanel.classList.remove('hidden');
+                document.getElementById('diag-phase').textContent = `Phase: ${data.phase}`;
+                document.getElementById('diag-progress-bar').style.width = `${data.progress}%`;
+                document.getElementById('diag-percent').textContent = `${data.progress.toFixed(2)}%`;
+                document.getElementById('diag-eta').textContent = `ETA: ${data.eta}`;
+                document.getElementById('diag-speed').textContent = data.speed;
+                
+                const e = data.errors || {read: 0, write: 0, compare: 0};
+                document.getElementById('diag-errors').textContent = `${e.read} / ${e.write} / ${e.compare}`;
+            }
+        } else if (data.status === 'finished' || data.status === 'error' || data.status === 'aborted') {
             clearInterval(pollInterval);
             pollInterval = null;
             document.getElementById('btn-run-fio').classList.remove('hidden');
@@ -340,6 +358,7 @@ async function pollFioStatus() {
             
             if (data.status === 'finished') {
                 out.textContent += "\n[TEST COMPLETED]";
+                alert("Diagnostic completed successfully!");
             } else if (data.status === 'error') {
                 out.textContent += "\n[TEST ERRORED]";
             }
