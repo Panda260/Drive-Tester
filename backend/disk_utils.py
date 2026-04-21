@@ -76,6 +76,7 @@ import threading
 import signal
 
 active_tests = {}
+test_queues = {}  # disk_name -> list of task lists
 
 import re
 import time
@@ -83,83 +84,89 @@ import time
 # Regex for badblocks: "37584 37585 0.84% done, 7:31:08 elapsed. (0/0/527405 errors)"
 PROGRESS_RE = re.compile(r"(\d+(?:\.\d+)?)% done, ([\d:]+) elapsed\. \((\d+)/(\d+)/(\d+) errors\)")
 
-def bg_test_runner(disk_name, tasks):
-    """Universal background runner for single or multi-stage tests (FIO, Badblocks, Suite)."""
-    active_tests[disk_name] = {
-        "status": "running",
-        "output": [],
-        "progress": 0,
-        "speed": "0 MB/s",
-        "eta": "Calculating...",
-        "errors": {"read": 0, "write": 0, "compare": 0},
-        "phase": "Initializing...",
-        "process": None
-    }
-    
-    for i, (phase_name, cmd) in enumerate(tasks):
-        if active_tests[disk_name]["status"] != "running":
-            break
-            
-        active_tests[disk_name]["phase"] = phase_name
-        active_tests[disk_name]["output"].append(f"\n>>> PHASE {i+1}/{len(tasks)}: {phase_name} <<<\n")
+def bg_test_runner(disk_name):
+    """Universal background runner pulling from queues."""
+    while disk_name in test_queues and len(test_queues[disk_name]) > 0:
+        tasks = test_queues[disk_name].pop(0)
         
-        start_time = time.time()
-        # Track blocks/progress for speed calculation if it's badblocks
-        is_badblocks = "badblocks" in cmd
+        active_tests[disk_name] = {
+            "status": "running",
+            "output": [],
+            "progress": 0,
+            "speed": "0 MB/s",
+            "eta": "Calculating...",
+            "errors": {"read": 0, "write": 0, "compare": 0},
+            "phase": "Initializing...",
+            "process": None
+        }
         
-        # Safety unmount to ensure the device isn't busy
-        subprocess.run(f"umount {dev_path}* || true", shell=True)
-        
-        proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, preexec_fn=os.setsid)
-        active_tests[disk_name]["process"] = proc
-        
-        # Use a more flexible reader that handles \r (carriage return) for progress bars
-        def read_output():
-            buffer = ""
-            while True:
-                char = proc.stdout.read(1)
-                if not char:
-                    if buffer: yield buffer
-                    break
-                if char in ['\r', '\n']:
-                    yield buffer + char
-                    buffer = ""
-                else:
-                    buffer += char
-
-        for line in read_output():
-            # Parse progress if applicable
-            match = PROGRESS_RE.search(line)
-            if match:
-                prog = float(match.group(1))
-                active_tests[disk_name]["progress"] = prog
-                active_tests[disk_name]["errors"] = {
-                    "read": int(match.group(3)),
-                    "write": int(match.group(4)),
-                    "compare": int(match.group(5))
-                }
-                # Calculate simple ETA/Speed placeholder (can be expanded)
-                elapsed = time.time() - start_time
-                if prog > 0:
-                    total_est = (elapsed / prog) * 100
-                    rem = total_est - elapsed
-                    m, s = divmod(int(rem), 60)
-                    h, m = divmod(m, 60)
-                    active_tests[disk_name]["eta"] = f"{h:02d}:{m:02d}:{s:02d}"
+        for i, (phase_name, cmd) in enumerate(tasks):
+            if active_tests[disk_name]["status"] != "running":
+                break
                 
-                # For long scans, don't spam the log with every progress update
-                if is_badblocks:
-                    continue 
+            active_tests[disk_name]["phase"] = f"{phase_name} (Task 1 of Sequence)" if len(tasks) == 1 else f"{phase_name} ({i+1}/{len(tasks)})"
+            active_tests[disk_name]["output"].append(f"\n>>> Executing: {phase_name} <<<\n")
+            
+            start_time = time.time()
+            is_badblocks = "badblocks" in cmd
+            dev_path = f"/dev/{disk_name}"
+            
+            # Safety unmount to ensure the device isn't busy
+            subprocess.run(f"umount {dev_path}* || true", shell=True)
+            
+            proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, preexec_fn=os.setsid)
+            active_tests[disk_name]["process"] = proc
+            
+            def read_output():
+                buffer = ""
+                while True:
+                    char = proc.stdout.read(1)
+                    if not char:
+                        if buffer: yield buffer
+                        break
+                    if char in ['\r', '\n']:
+                        yield buffer + char
+                        buffer = ""
+                    else:
+                        buffer += char
 
-            active_tests[disk_name]["output"].append(line)
-            if len(active_tests[disk_name]["output"]) > 100:
-                active_tests[disk_name]["output"].pop(0)
+            for line in read_output():
+                # Parse progress if applicable
+                match = PROGRESS_RE.search(line)
+                if match:
+                    prog = float(match.group(1))
+                    active_tests[disk_name]["progress"] = prog
+                    active_tests[disk_name]["errors"] = {
+                        "read": int(match.group(3)),
+                        "write": int(match.group(4)),
+                        "compare": int(match.group(5))
+                    }
+                    elapsed = time.time() - start_time
+                    if prog > 0:
+                        total_est = (elapsed / prog) * 100
+                        rem = total_est - elapsed
+                        m, s = divmod(int(rem), 60)
+                        h, m = divmod(m, 60)
+                        active_tests[disk_name]["eta"] = f"{h:02d}:{m:02d}:{s:02d}"
+                    
+                    if is_badblocks: continue 
 
-        proc.stdout.close()
-        proc.wait()
+                active_tests[disk_name]["output"].append(line)
+                if len(active_tests[disk_name]["output"]) > 100:
+                    active_tests[disk_name]["output"].pop(0)
+
+            proc.stdout.close()
+            proc.wait()
+            
+        if active_tests[disk_name]["status"] == "running":
+            active_tests[disk_name]["status"] = "finished" if proc.returncode == 0 else "error"
         
-    if active_tests[disk_name]["status"] == "running":
-        active_tests[disk_name]["status"] = "finished" if proc.returncode == 0 else "error"
+        # Keep status as finished/error for a tiny bit if queue is empty, so frontend can see it
+        # But honestly the frontend will grab it and if queue is populated, it rolls over.
+        time.sleep(2)
+
+    # If we exit the loop, the queue is empty. Clean up if finished so frontend knows we are done.
+    # It will remain in active_tests as 'finished'.
 
 def start_fio_test(disk_name, test_type="read", test_mode="random", bs="4k", direct=1):
     """Start diagnostic test (FIO, Suite, or Badblocks) in background."""
@@ -170,10 +177,11 @@ def start_fio_test(disk_name, test_type="read", test_mode="random", bs="4k", dir
     tasks = []
 
     if test_type == "badblocks":
+        # -f: force run on mounted partitions
         # -w: destructive write-mode, -v: verbose, -s: progress
         # -b 16384: Use 16KB block size to support drives > 16TB (32-bit block limit fix)
         # -c 65536: Test 64K blocks at once for significantly faster performance on large disks
-        cmd = f"badblocks -wvs -b 16384 -c 65536 {dev_path}"
+        cmd = f"badblocks -f -wvs -b 16384 -c 65536 {dev_path}"
         tasks.append(("Badblocks Surface Scan", cmd))
     elif test_type == "suite":
         # Sequential Suite: Read -> Write -> ReadWrite
@@ -193,10 +201,19 @@ def start_fio_test(disk_name, test_type="read", test_mode="random", bs="4k", dir
                f"--time_based --group_reporting --eta=always")
         tasks.append(("Standard Benchmark", cmd))
 
-    t = threading.Thread(target=bg_test_runner, args=(disk_name, tasks))
-    t.daemon = True
-    t.start()
-    return {"status": "started"}
+    # Add to queue
+    if disk_name not in test_queues:
+        test_queues[disk_name] = []
+    test_queues[disk_name].append(tasks)
+
+    # If runner is not active, start it
+    if disk_name not in active_tests or active_tests[disk_name]["status"] not in ["running"]:
+        t = threading.Thread(target=bg_test_runner, args=(disk_name,))
+        t.daemon = True
+        t.start()
+        return {"status": "queued_and_started", "queue_depth": len(test_queues[disk_name])}
+
+    return {"status": "queued", "queue_depth": len(test_queues[disk_name])}
 
 def get_fio_status(disk_name):
     """Retrieve live status and metadata."""
@@ -204,6 +221,8 @@ def get_fio_status(disk_name):
         return {"status": "none"}
     
     test = active_tests[disk_name]
+    q_len = len(test_queues.get(disk_name, []))
+    
     return {
         "status": test["status"],
         "lines": test["output"],
@@ -211,11 +230,15 @@ def get_fio_status(disk_name):
         "speed": test.get("speed", "0 MB/s"),
         "eta": test.get("eta", "Calculating..."),
         "errors": test.get("errors", {}),
-        "phase": test.get("phase", "")
+        "phase": test.get("phase", ""),
+        "queue_depth": q_len
     }
 
 def stop_fio_test(disk_name):
-    """Stop running fio test."""
+    """Stop running fio test AND clear queue."""
+    if disk_name in test_queues:
+        test_queues[disk_name] = []  # Clear pending tasks
+        
     if disk_name in active_tests and active_tests[disk_name]["status"] == "running":
         proc = active_tests[disk_name]["process"]
         try:

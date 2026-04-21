@@ -106,6 +106,7 @@ function selectDisk(disk) {
     
     updateExpectedData();
     startTempPolling();
+    checkRunningTest();
 }
 
 async function updateExpectedData() {
@@ -374,6 +375,10 @@ async function pollFioStatus() {
         }
         
         if (data.status === 'running') {
+            // Re-hide run button and show abort if we just reconnected
+            document.getElementById('btn-run-fio').classList.add('hidden');
+            document.getElementById('btn-abort-fio').classList.remove('hidden');
+            
             // Update Pro Diagnostic Dashboard
             if (data.phase) {
                 diagPanel.classList.remove('hidden');
@@ -385,6 +390,13 @@ async function pollFioStatus() {
                 
                 const e = data.errors || {read: 0, write: 0, compare: 0};
                 document.getElementById('diag-errors').textContent = `${e.read} / ${e.write} / ${e.compare}`;
+            }
+            
+            // Update queue depth
+            const queueDepth = data.queue_depth || 0;
+            const qEl = document.getElementById('diag-queue');
+            if (qEl) {
+                qEl.textContent = queueDepth > 0 ? `${queueDepth} pending` : 'Empty';
             }
         } else if (data.status === 'finished' || data.status === 'error' || data.status === 'aborted') {
             clearInterval(pollInterval);
@@ -401,6 +413,30 @@ async function pollFioStatus() {
         }
     } catch (e) {
         console.error("Poll error", e);
+    }
+}
+
+async function checkRunningTest() {
+    if (!selectedDisk) return;
+    try {
+        const res = await fetch(`/api/fio/${selectedDisk.name}/status`);
+        const data = await res.json();
+        
+        // If there's an active running test or pending in queue
+        if (data.status === 'running' || data.queue_depth > 0) {
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(() => pollFioStatus(), 1000);
+            
+            // Do an immediate update
+            pollFioStatus();
+        } else {
+            // Reset UI cleanly
+            document.getElementById('btn-run-fio').classList.remove('hidden');
+            document.getElementById('btn-abort-fio').classList.add('hidden');
+            document.getElementById('diagnostic-progress-panel').classList.add('hidden');
+        }
+    } catch (e) {
+        console.error("Error checking test status", e);
     }
 }
 
