@@ -11,6 +11,7 @@ const CRITICAL_ATTRIBUTES = [
 
 document.addEventListener('DOMContentLoaded', () => {
     fetchDisks();
+    setupEventListeners();
     
     // Add listener for format confirm input
     const confirmInput = document.getElementById('confirm-input');
@@ -49,7 +50,7 @@ function renderDiskList() {
         const el = document.createElement('div');
         el.className = `drive-item ${selectedDisk?.name === disk.name ? 'active' : ''}`;
         el.innerHTML = `
-            <div class="drive-name">${disk.name} <span style="font-size: 0.8rem; color: var(--text-secondary)">(${disk.size || 'Unknown'})</span></div>
+            <div class="drive-name">${disk.name} <span style="font-size: 0.8rem; color: var(--text-secondary)">(${formatDiskSize(disk.size)})</span></div>
             <div class="drive-desc">${disk.model || 'Unknown Model'}</div>
         `;
         el.onclick = () => selectDisk(disk);
@@ -70,7 +71,7 @@ function selectDisk(disk) {
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.85rem;">
             <p><strong>Name:</strong> ${disk.name}</p>
             <p><strong>Model:</strong> ${disk.model || 'N/A'}</p>
-            <p><strong>Size:</strong> ${disk.size || 'N/A'}</p>
+            <p><strong>Size:</strong> ${formatDiskSize(disk.size)}</p>
             <p><strong>Type:</strong> ${disk.tran ? disk.tran.toUpperCase() : 'N/A'} ${disk.rota ? 'HDD' : 'SSD'}</p>
             <p><strong>Serial:</strong> ${disk.serial || 'N/A'}</p>
             <p><strong>WWN:</strong> <span style="font-size: 0.75rem;">${disk.wwn || 'N/A'}</span></p>
@@ -334,4 +335,49 @@ async function loadHistory() {
     } catch (e) {
         tbody.innerHTML = `<tr><td colspan="4" class="danger-row">Failed to load history</td></tr>`;
     }
+}
+
+function setupEventListeners() {
+    const eventSource = new EventSource('/api/events');
+    
+    eventSource.onmessage = (event) => {
+        if (event.data === 'reload') {
+            handleDiskReload();
+        }
+    };
+    
+    eventSource.onerror = (err) => {
+        console.error('EventSource connection lost. Retrying in 5s...');
+        eventSource.close();
+        setTimeout(setupEventListeners, 5000);
+    };
+}
+
+async function handleDiskReload() {
+    const oldSelectedName = selectedDisk ? selectedDisk.name : null;
+    await fetchDisks();
+    
+    if (oldSelectedName) {
+        const stillExists = currentDisks.find(d => d.name === oldSelectedName);
+        if (!stillExists) {
+            selectedDisk = null;
+            // Clear the view
+            document.getElementById('selected-drive-title').textContent = 'Select a Drive';
+            document.getElementById('drive-details').innerHTML = '<div class="placeholder-text">Select a drive from the list to view details and run benchmarks.</div>';
+            document.getElementById('smart-table-body').innerHTML = '<tr><td colspan="6" class="placeholder-text">Select a drive first.</td></tr>';
+            document.getElementById('fio-output').textContent = 'No drive selected.';
+            document.getElementById('expected-output').innerHTML = '';
+            renderDiskList();
+        }
+    }
+}
+
+function formatDiskSize(bytes) {
+    if (!bytes || isNaN(bytes)) return 'Unknown';
+    if (bytes === 0) return '0 B';
+    const k = 1000;
+    const sizes = ['B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    // Support showing 1 decimal place, e.g. 2.0 TB
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }

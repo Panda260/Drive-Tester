@@ -1,7 +1,32 @@
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, Response
 import os
 import disk_utils
 import database
+import pyudev
+import threading
+from queue import Queue
+
+# Handle live event distribution
+subscribers = []
+subscribers_lock = threading.Lock()
+
+def udev_monitor_task():
+    """Background task to watch for disk insertion/removal."""
+    try:
+        context = pyudev.Context()
+        monitor = pyudev.Monitor.from_netlink(context)
+        monitor.filter_by(subsystem='block', device_type='disk')
+        
+        for device in iter(monitor.poll, None):
+            if device.action in ('add', 'remove'):
+                with subscribers_lock:
+                    for q in subscribers:
+                        q.put("reload")
+    except Exception as e:
+        print(f"udev monitor error: {e}")
+
+# Start udev monitor thread
+threading.Thread(target=udev_monitor_task, daemon=True).start()
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
 
@@ -115,6 +140,30 @@ def get_history():
     disk_name = request.args.get('disk')
     history = database.get_history(disk_name)
     return jsonify({"history": history})
+
+@app.route('/api/events')
+def stream_events():
+    """SSE endpoint to stream disk hotplug events."""
+    def event_generator():
+        q = Queue()
+        with subscribers_lock:
+            subscribers.append(q)
+        try:
+            # Send initial ping to confirm connection
+            yield "data: connected\n\n"
+            while True:
+                msg = q.get()
+                yield f"data: {msg}\n\n"
+        except GeneratorExit:
+            with subscribers_lock:
+                if q in subscribers:
+                    subscribers.remove(q)
+        except Exception:
+            with subscribers_lock:
+                if q in subscribers:
+                    subscribers.remove(q)
+
+    return Response(event_generator(), mimetype='text/event-stream')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

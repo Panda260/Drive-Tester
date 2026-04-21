@@ -13,8 +13,8 @@ def run_cmd(cmd):
 
 def get_disks():
     """Get all physical disks on the system."""
-    # lsblk -J -d returns JSON format with detailed columns
-    cmd = "lsblk -J -d -o NAME,SIZE,MODEL,TYPE,ROTA,MOUNTPOINT,SERIAL,WWN,VENDOR,REV,TRAN,LOG-SEC,PHY-SEC,HOTPLUG"
+    # lsblk -J -d -b returns JSON format with size in bytes
+    cmd = "lsblk -J -d -b -o NAME,SIZE,MODEL,TYPE,ROTA,MOUNTPOINT,SERIAL,WWN,VENDOR,REV,TRAN,LOG-SEC,PHY-SEC,HOTPLUG"
     try:
         output = run_cmd(cmd)
         data = json.loads(output)
