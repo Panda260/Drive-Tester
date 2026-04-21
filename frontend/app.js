@@ -450,11 +450,11 @@ async function updateTempUI() {
         
         if (data.temps && data.temps.length > 0) {
             const tempStr = data.temps.map(t => `${t}°C`).join(' | ');
-            display.innerHTML = `<div class="spinner loader-small hidden"></div><span class="temp-badge">${tempStr}</span>`;
+            display.innerHTML = `<span class="temp-badge">${tempStr}</span><div class="spinner loader-small hidden" style="margin-left: 0.5rem;"></div>`;
             if (data.temps.some(t => t > 50)) display.classList.add('hot');
             else display.classList.remove('hot');
         } else {
-            display.innerHTML = '<div class="spinner loader-small hidden"></div><span class="placeholder-text" style="font-size:0.7rem">No Temp</span>';
+            display.innerHTML = '<span class="placeholder-text" style="font-size:0.7rem">No Temp</span><div class="spinner loader-small hidden" style="margin-left: 0.5rem;"></div>';
         }
     } catch (e) {
         console.error("Temp poll error", e);
