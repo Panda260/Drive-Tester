@@ -151,6 +151,11 @@ def bg_test_runner(disk_name):
                         else:
                             buffer += span
 
+            bad_block_spam_count = 0
+            
+            from collections import deque
+            output_buffer = deque(active_tests[disk_name]["output"], maxlen=100)
+            
             for line in read_output():
                 # Parse progress if applicable
                 match = PROGRESS_RE.search(line)
@@ -169,12 +174,28 @@ def bg_test_runner(disk_name):
                         m, s = divmod(int(rem), 60)
                         h, m = divmod(m, 60)
                         active_tests[disk_name]["eta"] = f"{h:02d}:{m:02d}:{s:02d}"
+                        
+                    errs = active_tests[disk_name]["errors"]
+                    if errs["read"] > 500 or errs["write"] > 500 or errs["compare"] > 500:
+                        try: os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                        except: proc.terminate()
+                        output_buffer.append("\n[TEST ABORTED: Massive I/O errors detected. Drive is likely locked by Windows/WSL2.]\n")
+                        break
                     
                     if is_badblocks: continue 
+                
+                # Suppress spam from bad block lists to avoid GIL lockups
+                if is_badblocks and line.strip().isdigit():
+                    bad_block_spam_count += 1
+                    if bad_block_spam_count > 500:
+                        try: os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                        except: proc.terminate()
+                        output_buffer.append("\n[TEST ABORTED: Too many bad blocks! Drive is locked or completely failed.]\n")
+                        break
+                    continue
 
-                active_tests[disk_name]["output"].append(line)
-                if len(active_tests[disk_name]["output"]) > 100:
-                    active_tests[disk_name]["output"].pop(0)
+                output_buffer.append(line)
+                active_tests[disk_name]["output"] = list(output_buffer)
 
             proc.stdout.close()
             proc.wait()
