@@ -24,6 +24,13 @@ document.addEventListener('DOMContentLoaded', () => {
             formatBtn.disabled = true;
         }
     });
+
+    // Add UI change listeners for benchmarking settings
+    const testTypeSelect = document.getElementById('fio-test-type');
+    if (testTypeSelect) {
+        testTypeSelect.addEventListener('change', handleTestTypeChange);
+        handleTestTypeChange(); // Initialize UI state
+    }
 });
 
 async function fetchDisks() {
@@ -247,6 +254,35 @@ async function executeFormat() {
 }
 
 let pollInterval = null;
+
+function handleTestTypeChange() {
+    const type = document.getElementById('fio-test-type').value;
+    const modeGroup = document.getElementById('group-test-mode');
+    const sizeGroup = document.getElementById('group-block-size');
+    const directGroup = document.getElementById('group-direct-io');
+    const runBtn = document.getElementById('btn-run-fio');
+    const expectedBox = document.getElementById('expected-output');
+
+    if (type === 'badblocks') {
+        modeGroup.classList.add('hidden');
+        sizeGroup.classList.add('hidden');
+        directGroup.classList.add('hidden');
+        runBtn.textContent = 'Start Surface Scan';
+        expectedBox.innerHTML = '<span class="info-text">Badblocks scans every physical sector for hardware defects. This is deep-level hardware testing.</span>';
+    } else if (type === 'suite') {
+        modeGroup.classList.add('hidden');
+        sizeGroup.classList.add('hidden');
+        directGroup.classList.add('hidden');
+        runBtn.textContent = 'Run Pro Suite';
+        expectedBox.innerHTML = '<span class="info-text">The Pro Suite automates Read, Write, and Mixed benchmarks to determine realistic max performance.</span>';
+    } else {
+        modeGroup.classList.remove('hidden');
+        sizeGroup.classList.remove('hidden');
+        directGroup.classList.remove('hidden');
+        runBtn.textContent = 'Run Benchmark';
+        if (selectedDisk) updateExpectedData();
+    }
+}
 
 async function runFioTest() {
     if (!selectedDisk) return alert("Select a drive first.");

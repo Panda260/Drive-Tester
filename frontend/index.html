@@ -90,22 +90,22 @@
                                 <option value="badblocks">Badblocks Surface Scan (Destructive!)</option>
                             </select>
                         </div>
-                        <div class="control-group">
+                        <div class="control-group" id="group-test-mode">
                             <label>Mode</label>
                             <select id="fio-test-mode" class="select-input">
-                                <option value="random">Random (IOPS focus)</option>
                                 <option value="sequential">Sequential (Speed focus)</option>
+                                <option value="random">Random (IOPS focus)</option>
                             </select>
                         </div>
-                        <div class="control-group">
+                        <div class="control-group" id="group-block-size">
                             <label>Block Size</label>
                             <select id="fio-block-size" class="select-input">
+                                <option value="1M">1 MB (Seq. Throughput)</option>
                                 <option value="4k">4 KB (Standard IOPS)</option>
                                 <option value="64k">64 KB (Balanced)</option>
-                                <option value="1M">1 MB (Seq. Throughput)</option>
                             </select>
                         </div>
-                        <div class="control-group checkbox-group">
+                        <div class="control-group checkbox-group" id="group-direct-io">
                             <label><input type="checkbox" id="fio-direct" checked> Direct I/O (Bypass Cache)</label>
                         </div>
                         <div class="control-actions">

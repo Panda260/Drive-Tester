@@ -531,4 +531,20 @@ tr:hover td {
 .max-h-400 {
     max-height: 400px;
     overflow-y: auto;
+}.info-text {
+    background: rgba(66, 153, 225, 0.1);
+    border-left: 3px solid var(--primary-color);
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    display: block;
+    margin: 1rem 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
 }

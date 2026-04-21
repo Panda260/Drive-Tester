@@ -154,7 +154,9 @@ def start_fio_test(disk_name, test_type="read", test_mode="random", bs="4k", dir
 
     if test_type == "badblocks":
         # -w: destructive write-mode, -v: verbose, -s: progress
-        cmd = f"badblocks -wvs {dev_path}"
+        # -b 16384: Use 16KB block size to support drives > 16TB (32-bit block limit fix)
+        # -c 65536: Test 64K blocks at once for significantly faster performance on large disks
+        cmd = f"badblocks -wvs -b 16384 -c 65536 {dev_path}"
         tasks.append(("Badblocks Surface Scan", cmd))
     elif test_type == "suite":
         # Sequential Suite: Read -> Write -> ReadWrite
