@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   hdd-tester:
-    build: .
+    image: ghcr.io/panda260/drive-tester:latest
     container_name: drive-tester
     ports:
       - "5000:5000"
