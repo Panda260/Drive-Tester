@@ -107,10 +107,27 @@ def bg_test_runner(disk_name, tasks):
         # Track blocks/progress for speed calculation if it's badblocks
         is_badblocks = "badblocks" in cmd
         
-        proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, preexec_fn=os.setsid)
+        # Safety unmount to ensure the device isn't busy
+        subprocess.run(f"umount {dev_path}* || true", shell=True)
+        
+        proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, preexec_fn=os.setsid)
         active_tests[disk_name]["process"] = proc
         
-        for line in iter(proc.stdout.readline, ''):
+        # Use a more flexible reader that handles \r (carriage return) for progress bars
+        def read_output():
+            buffer = ""
+            while True:
+                char = proc.stdout.read(1)
+                if not char:
+                    if buffer: yield buffer
+                    break
+                if char in ['\r', '\n']:
+                    yield buffer + char
+                    buffer = ""
+                else:
+                    buffer += char
+
+        for line in read_output():
             # Parse progress if applicable
             match = PROGRESS_RE.search(line)
             if match:
