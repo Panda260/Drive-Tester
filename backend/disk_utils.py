@@ -114,21 +114,34 @@ def bg_test_runner(disk_name):
             # Safety unmount to ensure the device isn't busy
             subprocess.run(f"umount {dev_path}* || true", shell=True)
             
-            proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, preexec_fn=os.setsid)
+            # Use stdbuf to disable block buffering for C binaries (like badblocks) so output is immediate
+            if "badblocks" in cmd:
+                cmd = f"stdbuf -o0 -e0 {cmd}"
+                
+            proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=False, preexec_fn=os.setsid)
             active_tests[disk_name]["process"] = proc
             
             def read_output():
                 buffer = ""
+                fd = proc.stdout.fileno()
                 while True:
-                    char = proc.stdout.read(1)
-                    if not char:
+                    try:
+                        chunk = os.read(fd, 4096)
+                    except Exception:
+                        break
+                    if not chunk:
                         if buffer: yield buffer
                         break
-                    if char in ['\r', '\n']:
-                        yield buffer + char
-                        buffer = ""
-                    else:
-                        buffer += char
+                    text = chunk.decode('utf-8', errors='replace')
+                    import re
+                    # Split while keeping the delimiters ( \r or \n )
+                    parts = re.split(r'([\r\n])', text)
+                    for span in parts:
+                        if span in ['\r', '\n']:
+                            yield buffer + span
+                            buffer = ""
+                        else:
+                            buffer += span
 
             for line in read_output():
                 # Parse progress if applicable
