@@ -268,7 +268,7 @@ function handleTestTypeChange() {
         sizeGroup.classList.add('hidden');
         directGroup.classList.add('hidden');
         runBtn.textContent = 'Start Surface Scan';
-        expectedBox.innerHTML = '<span class="info-text">Badblocks scans every physical sector for hardware defects. This is deep-level hardware testing.</span>';
+        expectedBox.innerHTML = '<span class="info-text"><b>Badblocks 100% Surface Scan:</b> This test physically verifies every single sector on the drive. It is the most thorough way to detect hardware defects and failing storage.</span>';
     } else if (type === 'suite') {
         modeGroup.classList.add('hidden');
         sizeGroup.classList.add('hidden');
