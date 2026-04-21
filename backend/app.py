@@ -67,8 +67,11 @@ def start_fio(disk_name):
     
     req_data = request.get_json() or {}
     test_type = req_data.get("type", "read")
+    test_mode = req_data.get("mode", "random")
+    bs = req_data.get("bs", "4k")
+    direct = req_data.get("direct", 1)
     
-    result = disk_utils.start_fio_test(disk_name, test_type)
+    result = disk_utils.start_fio_test(disk_name, test_type, test_mode, bs, direct)
     if "error" in result:
         return jsonify(result), 400
     return jsonify(result)

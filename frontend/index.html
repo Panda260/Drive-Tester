@@ -74,14 +74,37 @@
                 <!-- Benchmarking Card -->
                 <div class="card glass col-span-2">
                     <h3>FIO Benchmarking & Diagnostics</h3>
-                    <div class="benchmark-controls">
-                        <select id="fio-test-type" class="select-input">
-                            <option value="read">Random Read (Non-destructive)</option>
-                            <option value="write">Random Write (Destructive!)</option>
-                            <option value="rw">Random Read/Write (Destructive!)</option>
-                        </select>
-                        <button class="btn btn-primary" onclick="runFioTest()" id="btn-run-fio">Run FIO Test</button>
-                        <button class="btn btn-danger hidden" onclick="abortFioTest()" id="btn-abort-fio">Abort Test</button>
+                    <div class="benchmark-controls multi-row">
+                        <div class="control-group">
+                            <label>Test Type</label>
+                            <select id="fio-test-type" class="select-input">
+                                <option value="read">Read Only</option>
+                                <option value="write">Write Only (Destructive!)</option>
+                                <option value="rw">Mixed Read/Write (Destructive!)</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Mode</label>
+                            <select id="fio-test-mode" class="select-input">
+                                <option value="random">Random (IOPS focus)</option>
+                                <option value="sequential">Sequential (Speed focus)</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Block Size</label>
+                            <select id="fio-block-size" class="select-input">
+                                <option value="4k">4 KB (Standard IOPS)</option>
+                                <option value="64k">64 KB (Balanced)</option>
+                                <option value="1M">1 MB (Seq. Throughput)</option>
+                            </select>
+                        </div>
+                        <div class="control-group checkbox-group">
+                            <label><input type="checkbox" id="fio-direct" checked> Direct I/O (Bypass Cache)</label>
+                        </div>
+                        <div class="control-actions">
+                            <button class="btn btn-primary" onclick="runFioTest()" id="btn-run-fio">Run Diagnostic</button>
+                            <button class="btn btn-danger hidden" onclick="abortFioTest()" id="btn-abort-fio">Abort Test</button>
+                        </div>
                     </div>
                     <div id="expected-output" class="details-content" style="margin-bottom: 1rem; font-size: 0.85rem;"></div>
                     <div id="fio-output" class="console-output">

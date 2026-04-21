@@ -223,10 +223,48 @@ body {
     color: var(--text-primary);
 }
 
-.smart-actions, .benchmark-controls {
+.benchmark-controls {
     display: flex;
     gap: 1rem;
     margin-bottom: 1rem;
+}
+
+.benchmark-controls.multi-row {
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+
+.control-group {
+    flex: 1;
+    min-width: 150px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.control-group label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.checkbox-group {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 200px;
+    padding-bottom: 8px; /* Alignment with other inputs */
+}
+
+.checkbox-group input {
+    width: auto;
+    cursor: pointer;
+}
+
+.control-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
 }
 
 .select-input, .text-input {

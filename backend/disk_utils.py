@@ -24,13 +24,20 @@ def get_disks():
         return [{"error": str(e), "raw": output if 'output' in locals() else ""}]
 
 def get_smart_data(disk_name):
-    """Get SMART data for a disk using smartmontools."""
-    # smartctl -a -j /dev/{disk_name}
+    """Get SMART data for a disk using smartmontools. Supports USB bridges."""
+    # Try default first
     cmd = f"smartctl -a -j /dev/{disk_name}"
     output = run_cmd(cmd)
     try:
-        # Ignore error code because smartctl uses error bits for various non-critical flags
         data = json.loads(output)
+        # Check if we got useful data. If not (common for USB), try -d sat
+        has_attrs = "ata_smart_attributes" in data or "nvme_smart_health_information_log" in data
+        if not has_attrs:
+            retry_cmd = f"smartctl -d sat -a -j /dev/{disk_name}"
+            retry_output = run_cmd(retry_cmd)
+            retry_data = json.loads(retry_output)
+            if "ata_smart_attributes" in retry_data:
+                return retry_data
         return data
     except Exception as e:
         return {"error": str(e), "raw": output}
@@ -61,21 +68,31 @@ def bg_fio_runner(disk_name, cmd):
     if active_tests[disk_name]["status"] == "running":
         active_tests[disk_name]["status"] = "finished" if proc.returncode == 0 else "error"
 
-def start_fio_test(disk_name, test_type="read"):
-    """Start fio test in background."""
+def start_fio_test(disk_name, test_type="read", test_mode="random", bs="4k", direct=1):
+    """Start fio test in background with advanced parameters."""
     if disk_name in active_tests and active_tests[disk_name]["status"] == "running":
         return {"error": "A test is already running on this disk"}
 
     dev_path = f"/dev/{disk_name}"
     
-    if test_type == "read":
-        rw_mode = "randread"
-    elif test_type == "write":
-        rw_mode = "randwrite"
-    else:
-        rw_mode = "randrw"
+    # Determine rw mode based on type and random/seq mode
+    if test_mode == "random":
+        if test_type == "read": rw = "randread"
+        elif test_type == "write": rw = "randwrite"
+        else: rw = "randrw"
+    else: # sequential
+        if test_type == "read": rw = "read"
+        elif test_type == "write": rw = "write"
+        else: rw = "readwrite"
 
-    cmd = f"fio --name=tester --filename={dev_path} --rw={rw_mode} --bs=4k --ioengine=libaio --iodepth=64 --numjobs=1 --size=1G --runtime=15 --time_based --group_reporting --eta=always"
+    # Default iodepth 64 for random, 1 for sequential (typical for HDD)
+    iodepth = 64 if test_mode == "random" else 8
+
+    cmd = (
+        f"fio --name=tester --filename={dev_path} --rw={rw} --bs={bs} "
+        f"--direct={direct} --ioengine=libaio --iodepth={iodepth} --numjobs=1 "
+        f"--size=1G --runtime=20 --time_based --group_reporting --eta=always"
+    )
     
     t = threading.Thread(target=bg_fio_runner, args=(disk_name, cmd))
     t.daemon = True

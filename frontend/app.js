@@ -143,28 +143,55 @@ function renderSmartTable(smartData) {
         return;
     }
     
-    const attrs = smartData.ata_smart_attributes?.table || [];
+    let rows = [];
+
+    // 1. Handle ATA/SATA Attributes (Standard HDD/SSD)
+    if (smartData.ata_smart_attributes?.table) {
+        smartData.ata_smart_attributes.table.forEach(attr => {
+            rows.push({
+                id: attr.id,
+                name: attr.name,
+                value: attr.value,
+                worst: attr.worst,
+                thresh: attr.thresh,
+                raw: attr.raw?.string || attr.raw?.value,
+                critical: CRITICAL_ATTRIBUTES.includes(attr.id) && attr.raw?.value > 0
+            });
+        });
+    } 
+    // 2. Handle NVMe Health Information (Modern M.2 SSDs)
+    else if (smartData.nvme_smart_health_information_log) {
+        const log = smartData.nvme_smart_health_information_log;
+        Object.keys(log).forEach((key, index) => {
+            const val = log[key];
+            rows.push({
+                id: index + 1,
+                name: key.replace(/_/g, ' ').toUpperCase(),
+                value: typeof val === 'object' ? JSON.stringify(val) : val,
+                worst: '-',
+                thresh: '-',
+                raw: typeof val === 'object' ? '-' : val,
+                critical: (key.includes('critical') || key.includes('error')) && val > 0
+            });
+        });
+    }
     
-    if (attrs.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="placeholder-text">No SMART attributes available for this drive.</td></tr>';
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="placeholder-text">No detailed SMART attributes found for this drive type.</td></tr>';
         return;
     }
     
-    attrs.forEach(attr => {
+    rows.forEach(row => {
         const tr = document.createElement('tr');
-        
-        // Highlight logic
-        if (CRITICAL_ATTRIBUTES.includes(attr.id) && attr.raw?.value > 0) {
-            tr.className = 'danger-row';
-        }
+        if (row.critical) tr.className = 'danger-row';
         
         tr.innerHTML = `
-            <td>${attr.id}</td>
-            <td>${attr.name}</td>
-            <td>${attr.value}</td>
-            <td>${attr.worst}</td>
-            <td>${attr.thresh}</td>
-            <td>${attr.raw?.string || attr.raw?.value}</td>
+            <td>${row.id}</td>
+            <td>${row.name}</td>
+            <td>${row.value}</td>
+            <td>${row.worst}</td>
+            <td>${row.thresh}</td>
+            <td>${row.raw}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -217,16 +244,20 @@ async function runFioTest() {
     if (!selectedDisk) return alert("Select a drive first.");
     
     const testType = document.getElementById('fio-test-type').value;
+    const testMode = document.getElementById('fio-test-mode').value;
+    const bsSize = document.getElementById('fio-block-size').value;
+    const isDirect = document.getElementById('fio-direct').checked ? 1 : 0;
+    
     const out = document.getElementById('fio-output');
     const runBtn = document.getElementById('btn-run-fio');
     const abortBtn = document.getElementById('btn-abort-fio');
     
     if (testType === 'write' || testType === 'rw') {
-        const confirmWrite = confirm("WARNING: Running a write test is destructive and will overwrite data on this partition/disk. Are you absolutely sure?");
+        const confirmWrite = confirm("WARNING: Running a write test is destructive and will overwrite data on the drive. Are you absolutely sure?");
         if (!confirmWrite) return;
     }
     
-    out.textContent = "Starting FIO target test...";
+    out.textContent = `Starting ${testMode.toUpperCase()} ${testType.toUpperCase()} test (${bsSize})...`;
     runBtn.classList.add('hidden');
     abortBtn.classList.remove('hidden');
     
@@ -234,7 +265,12 @@ async function runFioTest() {
         const response = await fetch(`/api/fio/${selectedDisk.name}/start`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({type: testType})
+            body: JSON.stringify({
+                type: testType,
+                mode: testMode,
+                bs: bsSize,
+                direct: isDirect
+            })
         });
         const data = await response.json();
         
