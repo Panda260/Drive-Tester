@@ -144,6 +144,13 @@ def get_history():
     history = database.get_history(disk_name)
     return jsonify({"history": history})
 
+@app.route('/api/temp/<disk_name>', methods=['GET'])
+def get_temp(disk_name):
+    if not disk_name.isalnum():
+        return jsonify({"error": "Invalid disk name"}), 400
+    temps = disk_utils.get_temperature(disk_name)
+    return jsonify({"temps": temps})
+
 @app.route('/api/events')
 def stream_events():
     """SSE endpoint to stream disk hotplug events."""

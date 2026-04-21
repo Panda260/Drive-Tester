@@ -1,5 +1,6 @@
 let currentDisks = [];
 let selectedDisk = null;
+let tempPollInterval = null;
 
 // Critical SMART attributes to highlight
 const CRITICAL_ATTRIBUTES = [
@@ -91,6 +92,7 @@ function selectDisk(disk) {
     document.getElementById('fio-output').textContent = 'Run a test to see output here.';
     
     updateExpectedData();
+    startTempPolling();
 }
 
 async function updateExpectedData() {
@@ -399,12 +401,47 @@ async function handleDiskReload() {
             selectedDisk = null;
             // Clear the view
             document.getElementById('selected-drive-title').textContent = 'Select a Drive';
+            document.getElementById('temp-display').innerHTML = '';
             document.getElementById('drive-details').innerHTML = '<div class="placeholder-text">Select a drive from the list to view details and run benchmarks.</div>';
             document.getElementById('smart-table-body').innerHTML = '<tr><td colspan="6" class="placeholder-text">Select a drive first.</td></tr>';
             document.getElementById('fio-output').textContent = 'No drive selected.';
             document.getElementById('expected-output').innerHTML = '';
             renderDiskList();
+            if (tempPollInterval) clearInterval(tempPollInterval);
         }
+    }
+}
+
+function startTempPolling() {
+    if (tempPollInterval) clearInterval(tempPollInterval);
+    if (!selectedDisk) return;
+    
+    updateTempUI();
+    tempPollInterval = setInterval(updateTempUI, 2000);
+}
+
+async function updateTempUI() {
+    if (!selectedDisk) {
+        if (tempPollInterval) clearInterval(tempPollInterval);
+        document.getElementById('temp-display').innerHTML = '';
+        return;
+    }
+    
+    try {
+        const res = await fetch(`/api/temp/${selectedDisk.name}`);
+        const data = await res.json();
+        const display = document.getElementById('temp-display');
+        
+        if (data.temps && data.temps.length > 0) {
+            const tempStr = data.temps.map(t => `${t}°C`).join(' | ');
+            display.innerHTML = `<span class="temp-badge">${tempStr}</span>`;
+            if (data.temps.some(t => t > 50)) display.classList.add('hot');
+            else display.classList.remove('hot');
+        } else {
+            display.innerHTML = '';
+        }
+    } catch (e) {
+        console.error("Temp poll error", e);
     }
 }
 

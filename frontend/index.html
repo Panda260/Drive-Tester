@@ -26,7 +26,10 @@
         <!-- Main Content -->
         <main class="main-content">
             <header class="topbar">
-                <h1 id="selected-drive-title">Select a Drive</h1>
+                <div class="title-with-temp">
+                    <h1 id="selected-drive-title">Select a Drive</h1>
+                    <div id="temp-display" class="temp-display"></div>
+                </div>
                 <div class="actions">
                     <button class="btn btn-outline" onclick="loadHistory()">View History</button>
                     <button class="btn btn-danger" onclick="openFormatModal()">Format Drive</button>

@@ -42,6 +42,33 @@ def get_smart_data(disk_name):
     except Exception as e:
         return {"error": str(e), "raw": output}
 
+def get_temperature(disk_name):
+    """Retrieve only the temperature data for a disk (high speed)."""
+    # Use -A to fetch only attributes/health for faster response
+    cmd = f"smartctl -A -j /dev/{disk_name}"
+    try:
+        output = run_cmd(cmd)
+        data = json.loads(output)
+        
+        # If no temperature field, it might be a USB device needing -d sat
+        if 'temperature' not in data:
+            retry_cmd = f"smartctl -d sat -A -j /dev/{disk_name}"
+            output = run_cmd(retry_cmd)
+            data = json.loads(output)
+            
+        temps = []
+        if 'temperature' in data:
+            t = data['temperature']
+            if 'current' in t: temps.append(t['current'])
+            if 'sensors' in t:
+                for s in t['sensors']:
+                    if s.get('value'): temps.append(s['value'])
+        
+        # Deduplicate and return
+        return sorted(list(set(temps)))
+    except:
+        return []
+
 import threading
 import signal
 

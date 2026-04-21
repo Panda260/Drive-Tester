@@ -120,6 +120,38 @@ body {
     margin-bottom: 2rem;
 }
 
+.title-with-temp {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.temp-badge {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success-color);
+    padding: 0.4rem 0.8rem;
+    border-radius: 0.5rem;
+    font-weight: 700;
+    font-size: 1.1rem;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.1);
+    transition: all 0.3s ease;
+}
+
+.temp-display.hot .temp-badge {
+    background: rgba(244, 63, 94, 0.2);
+    color: var(--danger-color);
+    border-color: rgba(244, 63, 94, 0.4);
+    box-shadow: 0 0 20px rgba(244, 63, 94, 0.2);
+    animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
 .actions {
     display: flex;
     gap: 1rem;
