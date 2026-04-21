@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  hdd-tester:
+    build: .
+    container_name: drive-tester
+    ports:
+      - "5000:5000"
+    # Privileged flag and volume mounts are critical for detecting block devices
+    privileged: true
+    volumes:
+      - /dev:/dev:ro
+      # Optional: To persist the database locally, mount a specific bind or volume
+      # - ./data:/app/backend/data
+    restart: unless-stopped

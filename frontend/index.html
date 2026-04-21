@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hard Drive Tester Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon"></div>
+                <h2>DiskTester</h2>
+            </div>
+            
+            <div class="section-title">Detected Drives</div>
+            <div id="drive-list" class="drive-list">
+                <!-- Dynamically populated -->
+                <div class="loading">Loading drives...</div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <h1 id="selected-drive-title">Select a Drive</h1>
+                <div class="actions">
+                    <button class="btn btn-outline" onclick="loadHistory()">View History</button>
+                    <button class="btn btn-danger" onclick="openFormatModal()">Format Drive</button>
+                </div>
+            </header>
+
+            <div class="dashboard-grid">
+                
+                <!-- Drive Stats Card -->
+                <div class="card glass">
+                    <h3>Drive Details</h3>
+                    <div id="drive-details" class="details-content">
+                        <p class="placeholder-text">No drive selected.</p>
+                    </div>
+                </div>
+
+                <!-- SMART Diagnostics Card -->
+                <div class="card glass">
+                    <div class="card-header">
+                        <h3>S.M.A.R.T. Health</h3>
+                        <div id="smart-status-badge" class="badge">Unknown</div>
+                    </div>
+                    <div class="smart-actions">
+                        <button class="btn btn-primary" onclick="fetchSmartData()">Read SMART Data</button>
+                    </div>
+                    <div class="table-container">
+                        <table id="smart-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Attribute Name</th>
+                                    <th>Value</th>
+                                    <th>Worst</th>
+                                    <th>Thresh</th>
+                                    <th>Raw</th>
+                                </tr>
+                            </thead>
+                            <tbody id="smart-table-body">
+                                <tr><td colspan="6" class="placeholder-text">Fetch SMART data to view attributes.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Benchmarking Card -->
+                <div class="card glass col-span-2">
+                    <h3>FIO Benchmarking & Diagnostics</h3>
+                    <div class="benchmark-controls">
+                        <select id="fio-test-type" class="select-input">
+                            <option value="read">Random Read (Non-destructive)</option>
+                            <option value="write">Random Write (Destructive!)</option>
+                            <option value="rw">Random Read/Write (Destructive!)</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="runFioTest()" id="btn-run-fio">Run FIO Test</button>
+                        <button class="btn btn-danger hidden" onclick="abortFioTest()" id="btn-abort-fio">Abort Test</button>
+                    </div>
+                    <div id="expected-output" class="details-content" style="margin-bottom: 1rem; font-size: 0.85rem;"></div>
+                    <div id="fio-output" class="console-output">
+                        Run a test to see output here.
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Format Modal -->
+    <div id="format-modal" class="modal-overlay hidden">
+        <div class="modal glass">
+            <h2>Format Drive</h2>
+            <p class="warning-text">WARNING: This will destroy all data on the selected drive!</p>
+            <div class="form-group">
+                <label for="fs-type">Filesystem</label>
+                <select id="fs-type" class="select-input">
+                    <option value="ext4">EXT4 (Linux)</option>
+                    <option value="ntfs">NTFS (Windows)</option>
+                    <option value="exfat">exFAT (Cross-Platform)</option>
+                    <option value="vfat">FAT32</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>To confirm, type the drive name (<span id="confirm-drive-name"></span>)</label>
+                <input type="text" id="confirm-input" class="text-input" placeholder="Drive name (e.g. sda)">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeModal('format-modal')">Cancel</button>
+                <button class="btn btn-danger" onclick="executeFormat()" id="btn-format-confirm" disabled>FORMAT NOW</button>
+            </div>
+            <div id="format-output" class="console-output hidden" style="margin-top: 1rem;"></div>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div id="history-modal" class="modal-overlay hidden">
+        <div class="modal glass large">
+            <h2>Test History</h2>
+            <div class="table-container max-h-400">
+                <table id="history-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Disk</th>
+                            <th>Test</th>
+                            <th>Result</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-table-body">
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeModal('history-modal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
