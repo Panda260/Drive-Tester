@@ -23,51 +23,54 @@ def get_disks():
     except Exception as e:
         return [{"error": str(e), "raw": output if 'output' in locals() else ""}]
 
+def fetch_with_fallbacks(disk_name, args):
+    """Try smartctl with multiple driver types as fallbacks for USB bridges."""
+    types = [None, "sat", "scsi"]
+    for t in types:
+        drv_arg = f"-d {t} " if t else ""
+        cmd = f"smartctl {drv_arg}{args} /dev/{disk_name}"
+        try:
+            output = run_cmd(cmd)
+            data = json.loads(output)
+            # Check if we got actual drive data. 
+            # Looking for attributes or health log or device model
+            if "ata_smart_attributes" in data or "nvme_smart_health_information_log" in data or "scsi_error_counter_log" in data:
+                return data
+            # Also valid if it at least identifies the model better than a generic Vendor
+            if t is not None and data.get("model_name"):
+                return data
+        except:
+            continue
+    # If all fallbacks failed, return the result of the first (default) call
+    try:
+        return json.loads(run_cmd(f"smartctl {args} /dev/{disk_name}"))
+    except:
+        return {}
+
 def get_smart_data(disk_name):
     """Get SMART data for a disk using smartmontools. Supports USB bridges."""
-    # Try default first
-    cmd = f"smartctl -a -j /dev/{disk_name}"
-    output = run_cmd(cmd)
-    try:
-        data = json.loads(output)
-        # Check if we got useful data. If not (common for USB), try -d sat
-        has_attrs = "ata_smart_attributes" in data or "nvme_smart_health_information_log" in data
-        if not has_attrs:
-            retry_cmd = f"smartctl -d sat -a -j /dev/{disk_name}"
-            retry_output = run_cmd(retry_cmd)
-            retry_data = json.loads(retry_output)
-            if "ata_smart_attributes" in retry_data:
-                return retry_data
-        return data
-    except Exception as e:
-        return {"error": str(e), "raw": output}
+    return fetch_with_fallbacks(disk_name, "-a -j")
 
 def get_temperature(disk_name):
     """Retrieve only the temperature data for a disk (high speed)."""
-    # Use -A to fetch only attributes/health for faster response
-    cmd = f"smartctl -A -j /dev/{disk_name}"
-    try:
-        output = run_cmd(cmd)
-        data = json.loads(output)
-        
-        # If no temperature field, it might be a USB device needing -d sat
-        if 'temperature' not in data:
-            retry_cmd = f"smartctl -d sat -A -j /dev/{disk_name}"
-            output = run_cmd(retry_cmd)
-            data = json.loads(output)
-            
-        temps = []
-        if 'temperature' in data:
-            t = data['temperature']
-            if 'current' in t: temps.append(t['current'])
-            if 'sensors' in t:
-                for s in t['sensors']:
-                    if s.get('value'): temps.append(s['value'])
-        
-        # Deduplicate and return
-        return sorted(list(set(temps)))
-    except:
-        return []
+    data = fetch_with_fallbacks(disk_name, "-A -j")
+    
+    temps = []
+    if 'temperature' in data:
+        t = data['temperature']
+        if 'current' in t: temps.append(t['current'])
+        if 'sensors' in t:
+            for s in t['sensors']:
+                if s.get('value'): temps.append(s['value'])
+    
+    # If not in temperature object, check attributes for ID 194 or 190
+    if not temps and 'ata_smart_attributes' in data:
+        for attr in data['ata_smart_attributes'].get('table', []):
+            if attr['id'] in [194, 190]:
+                temps.append(attr['raw']['value'])
+
+    # Deduplicate and return
+    return sorted(list(set(temps)))
 
 import threading
 import signal

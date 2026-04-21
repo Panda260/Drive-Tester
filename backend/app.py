@@ -151,6 +151,16 @@ def get_temp(disk_name):
     temps = disk_utils.get_temperature(disk_name)
     return jsonify({"temps": temps})
 
+@app.route('/api/temps', methods=['GET'])
+def get_all_temps():
+    # Fetch disks first to know what to scan
+    disks = disk_utils.get_disks()
+    results = {}
+    for d in disks:
+        name = d['name']
+        results[name] = disk_utils.get_temperature(name)
+    return jsonify(results)
+
 @app.route('/api/events')
 def stream_events():
     """SSE endpoint to stream disk hotplug events."""

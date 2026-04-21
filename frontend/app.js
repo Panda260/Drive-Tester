@@ -51,7 +51,13 @@ function renderDiskList() {
         const el = document.createElement('div');
         el.className = `drive-item ${selectedDisk?.name === disk.name ? 'active' : ''}`;
         el.innerHTML = `
-            <div class="drive-name">${disk.name} <span style="font-size: 0.8rem; color: var(--text-secondary)">(${formatDiskSize(disk.size)})</span></div>
+            <div class="drive-name">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span>${disk.name}</span>
+                    <span class="sidebar-temp" id="sidebar-temp-${disk.name}">--</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-secondary)">(${formatDiskSize(disk.size)})</div>
+            </div>
             <div class="drive-desc">${disk.model || 'Unknown Model'}</div>
         `;
         el.onclick = () => selectDisk(disk);
@@ -71,7 +77,7 @@ function selectDisk(disk) {
     document.getElementById('drive-details').innerHTML = `
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.85rem;">
             <p><strong>Name:</strong> ${disk.name}</p>
-            <p><strong>Model:</strong> ${disk.model || 'N/A'}</p>
+            <p><strong>Model:</strong> ${disk.model || disk.vendor || 'N/A'}</p>
             <p><strong>Size:</strong> ${formatDiskSize(disk.size)}</p>
             <p><strong>Type:</strong> ${disk.tran ? disk.tran.toUpperCase() : 'N/A'} ${disk.rota ? 'HDD' : 'SSD'}</p>
             <p><strong>Serial:</strong> ${disk.serial || 'N/A'}</p>
@@ -423,27 +429,59 @@ function startTempPolling() {
 async function updateTempUI() {
     if (!selectedDisk) {
         if (tempPollInterval) clearInterval(tempPollInterval);
-        document.getElementById('temp-display').innerHTML = '';
+        document.getElementById('temp-display').innerHTML = '<div class="spinner loader-small hidden"></div>';
         return;
     }
     
+    // Safety check: local variable to ensure we don't update if disk changed mid-fetch
+    const diskToFetch = selectedDisk.name;
+    const display = document.getElementById('temp-display');
+    
+    // Show loader
+    const loader = display.querySelector('.spinner');
+    if (loader) loader.classList.remove('hidden');
+    
     try {
-        const res = await fetch(`/api/temp/${selectedDisk.name}`);
+        const res = await fetch(`/api/temp/${diskToFetch}`);
         const data = await res.json();
-        const display = document.getElementById('temp-display');
+        
+        // Guard: check if the user switched disks while we were waiting
+        if (!selectedDisk || selectedDisk.name !== diskToFetch) return;
         
         if (data.temps && data.temps.length > 0) {
             const tempStr = data.temps.map(t => `${t}°C`).join(' | ');
-            display.innerHTML = `<span class="temp-badge">${tempStr}</span>`;
+            display.innerHTML = `<div class="spinner loader-small hidden"></div><span class="temp-badge">${tempStr}</span>`;
             if (data.temps.some(t => t > 50)) display.classList.add('hot');
             else display.classList.remove('hot');
         } else {
-            display.innerHTML = '';
+            display.innerHTML = '<div class="spinner loader-small hidden"></div><span class="placeholder-text" style="font-size:0.7rem">No Temp</span>';
         }
     } catch (e) {
         console.error("Temp poll error", e);
     }
 }
+
+// Global temperature polling for sidebar
+setInterval(async () => {
+    try {
+        const res = await fetch('/api/temps');
+        const data = await res.json();
+        Object.keys(data).forEach(diskName => {
+            const el = document.getElementById(`sidebar-temp-${diskName}`);
+            if (el) {
+                const temps = data[diskName];
+                if (temps && temps.length > 0) {
+                    el.textContent = `${temps[0]}°C`;
+                    el.style.display = 'inline-block';
+                } else {
+                    el.style.display = 'none';
+                }
+            }
+        });
+    } catch (e) {
+        console.error("Global temp poll error", e);
+    }
+}, 5000); // 5 seconds is enough for sidebar updates
 
 function formatDiskSize(bytes) {
     if (!bytes || isNaN(bytes)) return 'Unknown';
