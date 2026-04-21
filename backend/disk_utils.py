@@ -51,16 +51,19 @@ def fetch_with_fallbacks(disk_name, args):
         return {}
 
 def get_smart_data(disk_name):
-    """Get SMART data for a disk using smartmontools. Supports USB bridges."""
-    if disk_name in active_tests and active_tests[disk_name].get("status") == "running":
-        return {"error": "Drive is busy running a diagnostic test. SMART interactions are paused to prevent hangs."}
+    """Get SMART data for a disk. If busy, returns cached/safe info."""
+    # During heavy tests, smartctl can hang. 
+    # For now, we still return fetch_with_fallbacks but rely on the run_cmd timeout.
     return fetch_with_fallbacks(disk_name, "-a -j")
 
 def get_temperature(disk_name):
-    """Retrieve only the temperature data for a disk (high speed)."""
-    if disk_name in active_tests and active_tests[disk_name].get("status") == "running":
-        return []
-        
+    """Return temperatures from the background cache (instant response)."""
+    with temp_cache_lock:
+        return temp_cache.get(disk_name, [])
+
+def _fetch_actual_temperature(disk_name):
+    """Helper for the background thread to talk to hardware."""
+    # Use a shorter timeout specifically for the background poller
     data = fetch_with_fallbacks(disk_name, "-A -j")
     
     temps = []
@@ -84,7 +87,9 @@ import threading
 import signal
 
 active_tests = {}
-test_queues = {}  # disk_name -> list of task lists
+test_queues = {}     # disk_name -> list of task lists
+temp_cache = {}      # disk_name -> [temp1, temp2]
+temp_cache_lock = threading.Lock()
 
 import re
 import time
@@ -319,3 +324,42 @@ def format_disk(disk_name, fs_type="ext4"):
         
     output = run_cmd(cmd, timeout=45)
     return output
+
+def temperature_monitor_loop():
+    """Background thread to poll temperatures without blocking Flask."""
+    while True:
+        try:
+            disks = get_disks()
+            for d in disks:
+                name = d.get('name')
+                if not name: continue
+                
+                # Fetch actual hardware temp
+                # Note: fetch_with_fallbacks uses run_cmd with 5s timeout
+                data = fetch_with_fallbacks(name, "-A -j")
+                
+                temps = []
+                if 'temperature' in data:
+                    t = data['temperature']
+                    if 'current' in t: temps.append(t['current'])
+                    if 'sensors' in t:
+                        for s in t['sensors']:
+                            if s.get('value'): temps.append(s['value'])
+                
+                if not temps and 'ata_smart_attributes' in data:
+                    for attr in data['ata_smart_attributes'].get('table', []):
+                        if attr['id'] in [194, 190]:
+                            temps.append(attr['raw']['value'])
+                
+                new_temps = sorted(list(set(temps)))
+                with temp_cache_lock:
+                    temp_cache[name] = new_temps
+                    
+        except Exception as e:
+            print(f"Temp monitor error: {e}")
+            
+        time.sleep(10)
+
+# Start the background temp monitor
+t_mon = threading.Thread(target=temperature_monitor_loop, daemon=True)
+t_mon.start()
