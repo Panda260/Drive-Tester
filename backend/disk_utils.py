@@ -2,11 +2,14 @@ import subprocess
 import json
 import os
 
-def run_cmd(cmd):
-    """Run a shell command and return its output as a string."""
+def run_cmd(cmd, timeout=5):
+    """Run a shell command and return its output as a string. Includes timeout to prevent hanging."""
     try:
-        result = subprocess.run(cmd, shell=True, text=True, capture_output=True, check=True)
+        # Use timeout to prevent frozen processes from hanging the Flask server
+        result = subprocess.run(cmd, shell=True, text=True, capture_output=True, check=True, timeout=timeout)
         return result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        return ""
     except subprocess.CalledProcessError as e:
         # Check if we should ignore the error (e.g., smartctl might return non-zero exit even if successful)
         return e.stdout.strip() + "\n" + e.stderr.strip()
@@ -49,10 +52,15 @@ def fetch_with_fallbacks(disk_name, args):
 
 def get_smart_data(disk_name):
     """Get SMART data for a disk using smartmontools. Supports USB bridges."""
+    if disk_name in active_tests and active_tests[disk_name].get("status") == "running":
+        return {"error": "Drive is busy running a diagnostic test. SMART interactions are paused to prevent hangs."}
     return fetch_with_fallbacks(disk_name, "-a -j")
 
 def get_temperature(disk_name):
     """Retrieve only the temperature data for a disk (high speed)."""
+    if disk_name in active_tests and active_tests[disk_name].get("status") == "running":
+        return []
+        
     data = fetch_with_fallbacks(disk_name, "-A -j")
     
     temps = []
@@ -266,16 +274,16 @@ def format_disk(disk_name, fs_type="ext4"):
     """Format a disk with the given filesystem. Extremely dangerous."""
     # Unmount first just in case
     dev_path = f"/dev/{disk_name}"
-    run_cmd(f"umount {dev_path}* || true")
+    run_cmd(f"umount {dev_path}* || true", timeout=10)
     
     # Wipe signatures
-    run_cmd(f"wipefs -a {dev_path}")
+    run_cmd(f"wipefs -a {dev_path}", timeout=10)
     
     # Create new GPT partition table
-    run_cmd(f"parted -s {dev_path} mklabel gpt")
+    run_cmd(f"parted -s {dev_path} mklabel gpt", timeout=10)
     
     # Create a single partition using the whole disk
-    run_cmd(f"parted -s {dev_path} mkpart primary {fs_type} 0% 100%")
+    run_cmd(f"parted -s {dev_path} mkpart primary {fs_type} 0% 100%", timeout=10)
     
     part_path = f"{dev_path}1"
     
@@ -288,5 +296,5 @@ def format_disk(disk_name, fs_type="ext4"):
     else:
         cmd = f"mkfs.ext4 -F {part_path}"
         
-    output = run_cmd(cmd)
+    output = run_cmd(cmd, timeout=45)
     return output
